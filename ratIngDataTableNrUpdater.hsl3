@@ -1,0 +1,147 @@
+﻿#encoding=utf-8
+''' 2021-10-25: Implement raningdata table site RAT configuration.
+	2021-11-04: Change cell per band verification method.
+	2021-11-08: Updated site ID recognition algorithm
+'''
+
+# ----------------------------------------------------------VARIABLES----------------------------------------------------------#
+bscserverip = '172.16.121.41'
+dbuser = 'sitedb'
+dbpassword = 'BSCAltice.123'
+mccmnc = "18370f01"
+# ----------------------------------------------------------FUNCTIONS----------------------------------------------------------#
+def ranIngDataTableUpdate(siteId, neName, band)
+	#bandDict = {'2':['L1900', 'N/A'], '3':['L1800', 'N/A'], '4':['AWS', 'N/A'], '5':['L850', 'N/A'], '7':['L2600', 'N/A'], '26':['L850', 'N/A'], '42':['WTTX', 'N/A']}
+	bandDict = {'2':['L1900', 'N/A'], '4':['AWS', 'N/A'], '5':['L850', 'N/A'], '8':['L900', 'N/A'], '42':['WTTX', 'N/A']}
+	setClause = ""
+	# Remove duplicate values from band list
+	tmpList = []
+	for b in band
+		if b not in tmpList
+			tmpList.append(b)
+		end
+	end
+	band = tmpList
+	# Loop through the dict and check for existing bands
+	for i in range(len(band))
+		if band[i] == '2'
+			bandDict[band[i]][1] = 'L1900'
+		end
+		if band[i] == '4'
+			bandDict[band[i]][1] = 'LAWS'
+		end
+		if band[i] == '5'
+			bandDict[band[i]][1] = 'L850'
+		end
+		if band[i] == '26' and bandDict['5'][1] != 'N/A'
+			bandDict['5'][1] = 'L850'
+		end
+		if band[i] == '8'
+			bandDict[band[i]][1] = 'L900'
+		end
+		if band[i] == '42'
+			bandDict[band[i]][1] = 'WTTX'
+		end
+	end
+	# Loop through dict to contruct setClause
+	counter = 0
+	for key in bandDict
+		if bandDict[key] != 'N/A'
+			setClause += "`" + bandDict[key][0] + "` = '" + bandDict[key][1] + "'"
+			counter += 1
+			# If we're still not at the end, add a coma
+			if counter < len(bandDict)
+				setClause += ", "
+			end
+		else
+			# If we're still not at the end, add a coma
+			if counter < len(bandDict)
+				setClause += ", "
+			end
+		end
+	end
+	query = "UPDATE raningdata SET " + setClause + " WHERE (`Site` = '" + str(siteId) + "') and (`Nodo` = '" + neName + "');"
+	# Print query
+	Print(StrfTime("%Y%m%d:%H%M%S:") + query)
+	# Execute query
+	ExecuteCmd(ssh, query)
+end
+# -----------------------------------------------------------MAINCODE----------------------------------------------------------#
+# Get NE list by type
+NEList = GetNELstByType('BTS3900') + GetNELstByType('BTS5900') + GetNELstByType('BTS3900 LTE')
+NEList.sort()
+uniqueNeID = []
+uniqueNeRegion = []
+for ne in NEList
+	# Store current ne's region code (N, E, S, X)
+	currentNeRegion = ne[-1]
+	# If current NE is NR, LT, T or UL, then
+	if ne[0] == 'T' or ne[:2] == 'LT' or ne[:2] == 'NR' or ne[:2] == 'UL'
+		currentNeId = ne[2:-1]
+	else
+		currentNeId = ne[1:-1]
+	end
+	if currentNeId not in uniqueNeID
+		uniqueNeID.append(currentNeId)
+		uniqueNeRegion.append(currentNeRegion)
+	end
+end
+# Open the connection
+ssh = OpenSSH(bscserverip, dbuser, dbpassword)
+if IsConnected(ssh) == True
+    Print(StrfTime("%Y%m%d:%H%M%S:") + 'ssh connection success\n')
+    # Connect to the DB
+    ExecuteCmd(ssh, 'mysql -u ' + dbuser + ' -p' + dbpassword + ' alticedr_sitedb')
+    # Loop through the unique NE list
+    for i in range(len(uniqueNeID))
+		cellId = []
+		cellName = []
+		band = []
+		currentNeList = ['M' + uniqueNeID[i] + uniqueNeRegion[i], 'LT' + uniqueNeID[i] + uniqueNeRegion[i], 'UL' + uniqueNeID[i] + uniqueNeRegion[i], 'T' + uniqueNeID[i] + uniqueNeRegion[i]]
+		for ne in currentNeList
+			# Check if NE is online before connecting
+			if GetNEStatus(ne) == 1
+				Print(StrfTime("%Y%m%d:%H%M%S:") + ne + ' is online')
+				# Connect to the NE on loop
+				ConnectNE(ne)
+				Print('Connected to ' + ne)
+				Print(StrfTime("%Y%m%d:%H%M%S:") + 'Connected to ' + ne)
+				@LST ENODEBFUNCTION:;
+				eNodeBIdParsedReport = ParseMMLRpt(GetMMLReport(0))
+				enbidreport = GetRecordNum(eNodeBIdParsedReport, 0)
+				# If enbid != 0, then there's an eNodeB Function existing
+				if enbidreport != 0
+					# Get CELL information
+					@LST CELL:;
+					# Must get all command output reports, in case there is more than 1 report.
+					cellIdReportList = GetAllMMLReport()
+					# Loop through all the reports (even if it's just one)
+					for report in cellIdReportList
+						cellIdParsedReport = ParseMMLRpt(report)
+						cellId.append(Sequence2List(GetColumnByName(cellIdParsedReport, 0, 'Local Cell ID'))[1])
+						cellName.append(Sequence2List(GetColumnByName(cellIdParsedReport, 0, 'Cell Name'))[1])
+						tmpBand = Sequence2List(GetColumnByName(cellIdParsedReport, 0, 'Frequency band'))[1]
+						for b in tmpBand
+							band.append(b)
+						end
+					end
+					ClearMMLBuffer()
+				else
+					Print(StrfTime("%Y%m%d:%H%M%S:") + ne + " has no eNodeB Function.")
+					continue
+				end
+			else
+				Print(StrfTime("%Y%m%d:%H%M%S:") + ne + " is offline.")
+			end
+		end
+		# Calling Provisioning Function
+		Print(StrfTime("%Y%m%d:%H%M%S:") + 'Calling provisioning function.')
+		ranIngDataTableUpdate(uniqueNeID[i], currentNeList[0], band)
+	end
+else
+    Print(StrfTime("%Y%m%d:%H%M%S:") + 'ssh connection failed\n')
+end
+# Close the connection. 
+CloseSSH(ssh)
+Print(StrfTime("%Y%m%d:%H%M%S:") + 'ssh connection closed')
+Print("Finished!")

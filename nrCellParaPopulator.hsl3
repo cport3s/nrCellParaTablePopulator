@@ -1,0 +1,159 @@
+﻿#encoding=utf-8
+''' 2020-04-03: The script takes around 8 days to scroll through ~1700 BTS3900.
+                It's going to generate a log file each time the script starts.
+    2020-04-17: Included eNodeB Name data collection. No logs generated on file, but on task output.
+    2020-05-15: Include Cell Radius and BTS300 LTE NE types
+    2020-06-02: Changed Server IP Address
+    2020-11-12: eCGI Calculator integration 
+    2020-12-16: Implementing new db table population strategy 
+    2020-12-28: Fix bug on eCGI calculator 
+    2021-02-17: Added siteid on ltecellpara db table.
+	2021-08-02: Change eCGI structure & scan PDSCH and Cell Max Transmit Power
+	2021-08-03: Limit cells per query to 15
+	2021-10-26: Collect ACT & ADM cell state
+    '''
+
+# ----------------------------------------------------------VARIABLES----------------------------------------------------------#
+bscserverip = '172.16.121.41'
+dbuser = 'sitedb'
+dbpassword = 'BSCAltice.123'
+mccmnc = "18370f01"
+# ----------------------------------------------------------FUNCTIONS----------------------------------------------------------#
+def lteCellParaDbUpdate(eNodebId, cellId, pci, prach, arfcn, band, txMode, tac, eNbName, cellName, cellRad, eCGI, siteId, refSignal, cellMaxPwr, cellActState, cellAdmState)
+	# Data counter to avoid composing queries too large
+	dataCounter = 0
+    query = "REPLACE INTO ltecellpara (`enbid`, `cellid`, `pci`, `prach`, `arfcn`, `band`, `txmode`, `tac`, `enbname`, `cellname`, `cellrad`, `ecgi`, `siteid`, `pdsch`, `cellmaxpower`, `activestate`, `adminstate`) VALUES "
+    Print(StrfTime("%Y%m%d:%H%M%S:") + 'Connected! Populating eNodeB ' + eNodebId + ' data.')
+    for i in range(len(cellId))
+        eCGIProv = eCGI
+        # Completing eCGI. If less than 16 dec, then hex will be 1 digit only.
+        if int(cellId[i]) < 16
+            eCGIProv += "0"
+        end
+        eCGIProv += str(hex(int(cellId[i])))[2:]
+        query += "(" + eNodebId + ", " + cellId[i] + ", " + pci[i] + ", " + prach[i] + ", " + arfcn[i] + ", " + band[i] + ", '" + txMode[i] + "', " + tac + ", '" + eNbName + "', '" + cellName[i] + "', " + cellRad[i] + ", '" + eCGIProv + "', " + str(siteId) + ", " + refSignal[i] + ", " + cellMaxPwr[i] + ", '" + cellActState[i] + "', '" + cellAdmState[i] + "')"
+		# Increase counter with each loop
+        dataCounter += 1
+        # Check when you get to the last line and cross the dataCounter threshold
+        if i < len(cellId) - 1 and dataCounter < 16
+            query += ", "
+        else
+            query += ";"
+			# Print query
+			Print(StrfTime("%Y%m%d:%H%M%S:") + query)
+			# Execute query
+			ExecuteCmd(ssh, query)
+			# Reset query var
+			query = "REPLACE INTO ltecellpara (`enbid`, `cellid`, `pci`, `prach`, `arfcn`, `band`, `txmode`, `tac`, `enbname`, `cellname`, `cellrad`, `ecgi`, `siteid`, `pdsch`, `cellmaxpower`, `activestate`, `adminstate`) VALUES "
+			# Reset dataCounter
+			dataCounter = 0
+        end
+    end
+end
+
+# -----------------------------------------------------------MAINCODE----------------------------------------------------------#
+# Get NE list by type
+NEList = GetNELstByType('BTS3900') + GetNELstByType('BTS5900') + GetNELstByType('BTS3900 LTE')
+NEList.sort()
+# Open the connection
+ssh = OpenSSH(bscserverip, dbuser, dbpassword)
+if IsConnected(ssh) == True
+    Print(StrfTime("%Y%m%d:%H%M%S:") + 'ssh connection success\n')
+    # Connect to the DB
+    ExecuteCmd(ssh, 'mysql -u ' + dbuser + ' -p' + dbpassword + ' alticedr_sitedb')
+    # Loop through the NE list
+    for ne in NEList
+        # Check if NE is online before connecting
+        if GetNEStatus(ne) == 1
+            Print(StrfTime("%Y%m%d:%H%M%S:") + ne + ' is online')
+            # Connect to the NE on loop
+            ConnectNE(ne)
+            Print('Connected to ' + ne)
+            Print(StrfTime("%Y%m%d:%H%M%S:") + 'Connected to ' + ne)
+            @LST ENODEBFUNCTION:;
+            eNodeBIdParsedReport = ParseMMLRpt(GetMMLReport(0))
+            enbidreport = GetRecordNum(eNodeBIdParsedReport, 0)
+            eNodebId = GetAttrValueByIdx(eNodeBIdParsedReport, 0, 2, 0)
+            # If enbid != 0, then there's an eNodeB Function existing
+            if enbidreport != 0
+                # Add eNB ID to eCGI. Must omit the first 2 chars (0x)
+                enbIdHex = str(hex(int(eNodebId)))[2:]
+                while len(enbIdHex) < 6
+                    enbIdHex = "0" + enbIdHex   
+                end
+                # Get eNodeB name from the last MML Command
+                eNbName = GetAttrValueByIdx(eNodeBIdParsedReport, 0, 0, 0)
+                ClearMMLBuffer()
+                # Get TAC
+                @LST CNOPERATORTA:;
+                tacParsedReport = ParseMMLRpt(GetMMLReport(0))
+                tac = GetAttrValueByIdx(tacParsedReport, 0, 2, 0)
+				ClearMMLBuffer()
+                # Get CELL information
+                @LST CELL:;
+                # Must get all command output reports, in case there is more than 1 report.
+                cellIdReportList = GetAllMMLReport()
+                # Loop through all the reports (even if it's just one)
+                for report in cellIdReportList
+                    cellIdParsedReport = ParseMMLRpt(report)
+                    cellId = GetColumnByIndex(cellIdParsedReport, 0, 0)
+                    cellName = GetColumnByIndex(cellIdParsedReport, 0, 1)
+                    pci = GetColumnByIndex(cellIdParsedReport, 0, 14)
+                    prach = GetColumnByIndex(cellIdParsedReport, 0, 26)
+                    cellRad = GetColumnByIndex(cellIdParsedReport, 0, 29)
+                    arfcn = GetColumnByIndex(cellIdParsedReport, 0, 10)
+                    band = GetColumnByIndex(cellIdParsedReport, 0, 7)
+                    txMode = GetColumnByIndex(cellIdParsedReport, 0, 44)
+					cellActState = GetColumnByIndex(cellIdParsedReport, 0, 16)
+					cellAdmState = GetColumnByIndex(cellIdParsedReport, 0, 17)
+                end
+                eCGI = mccmnc + enbIdHex
+                # Calculate siteid parameter
+                # If enodebid lenght is 5, then we're dealing with an UL BBU
+                if len(eNodebId) == 5
+                    siteId = int(eNodebId) - 80000
+                elif len(eNodebId) == 6
+                    # Check if it's a TDD BBU or an anchor enodebid
+                    if eNodebId[:2] == '10'
+                        siteId = int(eNodebId) - 100000
+                    else
+                        siteId = int(eNodebId) - 110000
+                    end
+                else 
+                    siteId = int(eNodebId)
+                end
+				ClearMMLBuffer()
+				# Get Cell Power information
+				@LST PDSCHCFG:;
+				cellPdschReportList = GetAllMMLReport()
+				for report in cellPdschReportList
+					cellPdschParsedReport = ParseMMLRpt(report)
+					refSignal = GetColumnByIndex(cellPdschParsedReport, 0, 1)
+				end
+				ClearMMLBuffer()
+				# Get cell max transmit power
+				@DSP CELL:;
+				cellMaxPwrReportList = GetAllMMLReport()
+				for report in cellMaxPwrReportList
+					cellMaxPwrParsedReport = ParseMMLRpt(report)
+					cellMaxPwr = GetColumnByIndex(cellMaxPwrParsedReport, 0, 13)
+				end
+				ClearMMLBuffer()
+                # After getting all parameter from command output, we loop through the list and pass them to the function to populate the database.
+                Print(StrfTime("%Y%m%d:%H%M%S:") + 'Calling provisioning function.')
+                lteCellParaDbUpdate(eNodebId, cellId, pci, prach, arfcn, band, txMode, tac, eNbName, cellName, cellRad, eCGI, siteId, refSignal, cellMaxPwr, cellActState, cellAdmState)
+            else
+                Print(StrfTime("%Y%m%d:%H%M%S:") + ne + " has no eNodeB Function.")
+                continue
+            end
+        else
+            Print(StrfTime("%Y%m%d:%H%M%S:") + ne + " is offline.")
+        end
+    end
+else
+    Print(StrfTime("%Y%m%d:%H%M%S:") + 'ssh connection failed\n')
+end
+# Close the connection. 
+CloseSSH(ssh)
+Print(StrfTime("%Y%m%d:%H%M%S:") + 'ssh connection closed')
+Print("Finished!")
