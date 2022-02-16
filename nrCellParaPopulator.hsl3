@@ -119,39 +119,11 @@ if IsConnected(ssh) == True
 				end
                 #eCGI = mccmnc + gnbIdHex
                 # Calculate siteid parameter
-                # If gNodebId lenght is 5, then we're dealing with an UL BBU
-                if len(gNodebId) == 5
-                    siteId = int(gNodebId) - 80000
-                elif len(gNodebId) == 6
-                    # Check if it's a TDD BBU or an anchor gNodebId
-                    if gNodebId[:2] == '10'
-                        siteId = int(gNodebId) - 100000
-                    else
-                        siteId = int(gNodebId) - 110000
-                    end
-                else 
-                    siteId = int(gNodebId)
-                end
-				ClearMMLBuffer()
-				# Get Cell Power information
-				@LST PDSCHCFG:;
-				cellPdschReportList = GetAllMMLReport()
-				for report in cellPdschReportList
-					cellPdschParsedReport = ParseMMLRpt(report)
-					refSignal = GetColumnByIndex(cellPdschParsedReport, 0, 1)
-				end
-				ClearMMLBuffer()
-				# Get cell max transmit power
-				@DSP CELL:;
-				cellMaxPwrReportList = GetAllMMLReport()
-				for report in cellMaxPwrReportList
-					cellMaxPwrParsedReport = ParseMMLRpt(report)
-					cellMaxPwr = GetColumnByIndex(cellMaxPwrParsedReport, 0, 13)
-				end
+                siteId = str(int(gNodebId) - 5000000)
 				ClearMMLBuffer()
                 # After getting all parameter from command output, we loop through the list and pass them to the function to populate the database.
                 Print(StrfTime("%Y%m%d:%H%M%S:") + 'Calling provisioning function.')
-                lteCellParaDbUpdate(gNodebId, cellId, pci, prach, arfcn, band, txMode, tac, gNbName, cellName, cellRad, eCGI, siteId, refSignal, cellMaxPwr, cellActState, cellAdmState)
+                nrCellParaDbUpdate(gNodebId, cellId, cellName, pci, prach, arfcn, band, txMode, tac, gNbName, cellName, cellRad, eCGI, siteId, refSignal, cellMaxPwr, cellActState, cellAdmState)
             else
                 Print(StrfTime("%Y%m%d:%H%M%S:") + ne + " has no gNodeB Function.")
                 continue
