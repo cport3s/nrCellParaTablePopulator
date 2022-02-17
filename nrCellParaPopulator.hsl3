@@ -8,19 +8,19 @@ dbuser = 'sitedb'
 dbpassword = 'BSCAltice.123'
 mccmnc = "18370f01"
 # ----------------------------------------------------------FUNCTIONS----------------------------------------------------------#
-def nrCellParaDbUpdate(gNodebId, cellId, pci, prach, arfcn, band, txMode, tac, gNbName, cellName, cellRad, eCGI, siteId, refSignal, cellMaxPwr, cellActState, cellAdmState)
+def nrCellParaDbUpdate(gNodebId, cellId, siteId, gNodebName, cellName, pci, band, ulArfcn, dlArfcn, tac, ulBandwidth, dlBandwidth, duplexMode, cellRad, subCarrierSpacing, prach, txMode, txPower, cellAdmState, cellActState)
 	# Data counter to avoid composing queries too large
 	dataCounter = 0
-    query = "REPLACE INTO ltecellpara (`enbid`, `cellid`, `pci`, `prach`, `arfcn`, `band`, `txmode`, `tac`, `gNbName`, `cellname`, `cellrad`, `ecgi`, `siteid`, `pdsch`, `cellmaxpower`, `activestate`, `adminstate`) VALUES "
+    query = "REPLACE INTO nrcellpara (`gnbid`, `cellid`, `siteid`, `gnbname`, `cellname`, `pci`, `band`, `ularfcn`, `dlarfcn`, `tac`, `ulbandwidth`, `dlbandwidth`, `duplexmode`, `cellrad`, `subcarrierspacing`, `prach`, `txmode`, `txpower`, `adminstate`, `activestate`) VALUES "
     Print(StrfTime("%Y%m%d:%H%M%S:") + 'Connected! Populating gNodeB ' + gNodebId + ' data.')
     for i in range(len(cellId))
-        eCGIProv = eCGI
-        # Completing eCGI. If less than 16 dec, then hex will be 1 digit only.
-        if int(cellId[i]) < 16
-            eCGIProv += "0"
-        end
-        eCGIProv += str(hex(int(cellId[i])))[2:]
-        query += "(" + gNodebId + ", " + cellId[i] + ", " + pci[i] + ", " + prach[i] + ", " + arfcn[i] + ", " + band[i] + ", '" + txMode[i] + "', " + tac + ", '" + gNbName + "', '" + cellName[i] + "', " + cellRad[i] + ", '" + eCGIProv + "', " + str(siteId) + ", " + refSignal[i] + ", " + cellMaxPwr[i] + ", '" + cellActState[i] + "', '" + cellAdmState[i] + "')"
+        #eCGIProv = eCGI
+        ## Completing eCGI. If less than 16 dec, then hex will be 1 digit only.
+        #if int(cellId[i]) < 16
+        #    eCGIProv += "0"
+        #end
+        #eCGIProv += str(hex(int(cellId[i])))[2:]
+        query += "(" + gNodebId + ", " + cellId[i] + ", " + siteId + ", '" + gNodebName + "', '" + cellName[i] + "', " + pci[i] + ", '" + band[i] + "', " + ulArfcn[i] + ", " + dlArfcn[i] + ", " + tac + ", '" + ulBandwidth[i] + "', '" + dlBandwidth[i] + "', '" + duplexmode[i] + "', " + cellRad[i] + ", " + subCarrierSpacing[i] + ", " + prach[i] + ", '" + txMode[i] + "', " + txPower[i] +  ", '" + cellAdmState[i] +  "', '" + cellActState[i] + "')"
 		# Increase counter with each loop
         dataCounter += 1
         # Check when you get to the last line and cross the dataCounter threshold
@@ -33,7 +33,7 @@ def nrCellParaDbUpdate(gNodebId, cellId, pci, prach, arfcn, band, txMode, tac, g
 			# Execute query
 			ExecuteCmd(ssh, query)
 			# Reset query var
-			query = "REPLACE INTO ltecellpara (`enbid`, `cellid`, `pci`, `prach`, `arfcn`, `band`, `txmode`, `tac`, `gNbName`, `cellname`, `cellrad`, `ecgi`, `siteid`, `pdsch`, `cellmaxpower`, `activestate`, `adminstate`) VALUES "
+			query = "REPLACE INTO nrcellpara (`gnbid`, `cellid`, `siteid`, `gnbname`, `cellname`, `pci`, `band`, `ularfcn`, `dlarfcn`, `tac`, `ulbandwidth`, `dlbandwidth`, `duplexmode`, `cellrad`, `subcarrierspacing`, `prach`, `txmode`, `txpower`, `adminstate`, `activestate`) VALUES "
 			# Reset dataCounter
 			dataCounter = 0
         end
@@ -63,6 +63,7 @@ if IsConnected(ssh) == True
             lstGnodebFunctionParsedReport = ParseMMLRpt(GetMMLReport(0))
             gnbIdReport = GetRecordNum(lstGnodebFunctionParsedReport, 0)
             gNodebId = GetAttrValueByName(lstGnodebFunctionParsedReport, 0, 'gNodeB ID', 0)
+			gNodebName = GetAttrValueByName(lstGnodebFunctionParsedReport, 0, 'gNodeB Function Name', 0)
 			ClearMMLBuffer()
             # If gnbid != 0, then there's an gNodeB Function existing
             if gnbIdReport != 0
@@ -123,7 +124,7 @@ if IsConnected(ssh) == True
 				ClearMMLBuffer()
                 # After getting all parameter from command output, we loop through the list and pass them to the function to populate the database.
                 Print(StrfTime("%Y%m%d:%H%M%S:") + 'Calling provisioning function.')
-                nrCellParaDbUpdate(gNodebId, cellId, cellName, pci, prach, arfcn, band, txMode, tac, gNbName, cellName, cellRad, eCGI, siteId, refSignal, cellMaxPwr, cellActState, cellAdmState)
+                nrCellParaDbUpdate(gNodebId, cellId, siteId, gNodebName, cellName, pci, band, ulArfcn, dlArfcn, tac, ulBandwidth, dlBandwidth, duplexMode, cellRad, subCarrierSpacing, prach, txMode, txPower, cellAdmState, cellActState)
             else
                 Print(StrfTime("%Y%m%d:%H%M%S:") + ne + " has no gNodeB Function.")
                 continue
