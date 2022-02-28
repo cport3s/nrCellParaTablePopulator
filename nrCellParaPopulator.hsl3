@@ -1,6 +1,7 @@
 ﻿#encoding=utf-8
 ''' 2022-02-16: Initial release.
-    '''
+	2022-02-28: Fixed gNb ID standard
+'''
 
 # ----------------------------------------------------------VARIABLES----------------------------------------------------------#
 bscserverip = '172.16.121.41'
@@ -20,7 +21,7 @@ def nrCellParaDbUpdate(gNodebId, cellId, siteId, gNodebName, cellName, pci, band
         #    eCGIProv += "0"
         #end
         #eCGIProv += str(hex(int(cellId[i])))[2:]
-        query += "(" + gNodebId + ", " + cellId[i] + ", " + siteId + ", '" + gNodebName + "', '" + cellName[i] + "', " + pci[i] + ", '" + band[i] + "', " + ulArfcn[i] + ", " + dlArfcn[i] + ", " + tac + ", '" + ulBandwidth[i] + "', '" + dlBandwidth[i] + "', '" + duplexmode[i] + "', " + cellRad[i] + ", " + subCarrierSpacing[i] + ", " + prach[i] + ", '" + txMode[i] + "', " + txPower[i] +  ", '" + cellAdmState[i] +  "', '" + cellActState[i] + "')"
+        query += "(" + gNodebId + ", " + cellId[i] + ", " + siteId + ", '" + gNodebName + "', '" + cellName[i] + "', " + pci[i] + ", '" + band[i] + "', " + ulArfcn[i] + ", " + dlArfcn[i] + ", " + tac + ", '" + ulBandwidth[i] + "', '" + dlBandwidth[i] + "', '" + duplexMode[i] + "', " + cellRad[i] + ", " + subCarrierSpacing[i] + ", " + prach[i] + ", '" + txMode[i] + "', " + txPower[i] +  ", '" + cellAdmState[i] +  "', '" + cellActState[i] + "')"
 		# Increase counter with each loop
         dataCounter += 1
         # Check when you get to the last line and cross the dataCounter threshold
@@ -120,7 +121,7 @@ if IsConnected(ssh) == True
 				end
                 #eCGI = mccmnc + gnbIdHex
                 # Calculate siteid parameter
-                siteId = str(int(gNodebId) - 5000000)
+                siteId = str(int(gNodebId) - 1000000)
 				ClearMMLBuffer()
                 # After getting all parameter from command output, we loop through the list and pass them to the function to populate the database.
                 Print(StrfTime("%Y%m%d:%H%M%S:") + 'Calling provisioning function.')
